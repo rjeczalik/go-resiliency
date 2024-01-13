@@ -69,6 +69,7 @@ func (r *Retrier) RunCtx(ctx context.Context, work func(ctx context.Context) err
 // is returned to the caller regardless. The work function takes 2 args, the context and
 // the number of attempted retries.
 func (r *Retrier) RunFn(ctx context.Context, work func(ctx context.Context, retries int) error) error {
+	var timer *time.Timer
 	retries := 0
 	for {
 		ret := work(ctx, retries)
@@ -81,7 +82,12 @@ func (r *Retrier) RunFn(ctx context.Context, work func(ctx context.Context, retr
 				return ret
 			}
 
-			timer := time.NewTimer(r.calcSleep(retries))
+			if d := r.calcSleep(retries); timer == nil {
+				timer = time.NewTimer(d)
+			} else {
+				timer.Reset(d)
+			}
+
 			if err := r.sleep(ctx, timer); err != nil {
 				return err
 			}
@@ -96,10 +102,7 @@ func (r *Retrier) sleep(ctx context.Context, timer *time.Timer) error {
 	case <-timer.C:
 		return nil
 	case <-ctx.Done():
-		if !timer.Stop() {
-			<-timer.C
-		}
-
+		_ = timer.Stop()
 		return ctx.Err()
 	}
 }
